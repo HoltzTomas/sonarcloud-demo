@@ -19,8 +19,7 @@ const selectColumns = "id, customer, region, amount, owner, notes"
 
 // FindByCustomer returns the contracts of a customer.
 func FindByCustomer(db *sql.DB, customer string) ([]Contract, error) {
-	query := fmt.Sprintf("SELECT %s FROM contracts WHERE customer LIKE '%%%s%%'", selectColumns, customer)
-	rows, err := db.Query(query)
+	rows, err := db.Query("SELECT "+selectColumns+" FROM contracts WHERE customer LIKE ?", "%"+customer+"%")
 	if err != nil {
 		return nil, err
 	}
