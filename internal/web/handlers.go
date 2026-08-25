@@ -20,6 +20,10 @@ const AttachmentRoot = "data/attachments"
 
 var regionPattern = regexp.MustCompile(`^[A-Z]{2}-[0-9]{2}$`)
 
+// contractIDPattern allowlists contract identifiers (e.g. C-1001) so no shell
+// metacharacters or option-looking values reach the reporting CLI.
+var contractIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+
 // Server serves the contract desk UI.
 type Server struct {
 	DB *sql.DB
@@ -114,7 +118,11 @@ func (s *Server) Attachment(w http.ResponseWriter, r *http.Request) {
 // Export renders a contract through the reporting CLI.
 func (s *Server) Export(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
-	out, err := exec.Command("sh", "-c", "scripts/report-cli.sh --contract "+id+" --format pdf").CombinedOutput()
+	if !contractIDPattern.MatchString(id) {
+		http.Error(w, fmt.Sprintf("invalid contract id %q, expected format C-1001", id), http.StatusBadRequest)
+		return
+	}
+	out, err := exec.Command("/bin/sh", "scripts/report-cli.sh", "--contract", id, "--format", "pdf").CombinedOutput()
 	if err != nil {
 		http.Error(w, "export failed: "+string(out), http.StatusInternalServerError)
 		return
