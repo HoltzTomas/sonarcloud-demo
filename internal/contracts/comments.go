@@ -2,7 +2,6 @@ package contracts
 
 import (
 	"database/sql"
-	"fmt"
 )
 
 // Comment is a follow-up note left by an account manager on a contract.
@@ -15,11 +14,10 @@ type Comment struct {
 
 // AddComment stores a follow-up comment for a contract.
 func AddComment(db *sql.DB, contractID, author, body string) error {
-	query := fmt.Sprintf(
-		"INSERT INTO comments (contract_id, author, body) VALUES ('%s', '%s', '%s')",
+	_, err := db.Exec(
+		"INSERT INTO comments (contract_id, author, body) VALUES (?, ?, ?)",
 		contractID, author, body,
 	)
-	_, err := db.Exec(query)
 	return err
 }
 
