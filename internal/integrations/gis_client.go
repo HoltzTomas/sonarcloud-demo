@@ -9,7 +9,7 @@ import (
 // NewGISClient builds the HTTP client used to reach the GIS backend.
 func NewGISClient() *http.Client {
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 	return &http.Client{Transport: tr}
 }
