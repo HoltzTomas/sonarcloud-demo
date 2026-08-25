@@ -33,7 +33,7 @@ jobs:
           SONAR_HOST_URL: https://sonarcloud.io
           SONAR_PROJECT_KEY: HoltzTomas_sonarcloud-repsol-demo
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
-          DEVIN_PLAYBOOK_ID: PLAYBOOK_ID_GATE_OWNER
+          DEVIN_PLAYBOOK_ID: playbook-6ee7fbb086e94b3084fd1213bcd551a0
           DEVIN_TRIAGE_PLAYBOOK_ID: playbook-6a472415f95549de9af6f0e3545802ae
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.inputs.pr_number || (github.event.workflow_run.pull_requests[0].number || '') }}
