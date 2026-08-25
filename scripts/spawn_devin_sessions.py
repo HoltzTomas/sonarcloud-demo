@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Fan out one Devin session per SonarCloud finding.
+"""Create one Devin session to own a failing SonarCloud quality gate.
 
-Reads the open issues and security hotspots SonarCloud reported for a pull
-request (or a branch), and creates one Devin session per finding. Each session
-triages the finding first (real vulnerability vs false positive) and only then
-remediates, committing its fix on the pull request's own branch so the fix lands
-in the same pull request that Sonar flagged.
+Reads the open issues, security hotspots, and quality-gate conditions SonarCloud
+reported for a pull request (or a branch), then creates one gate-owner Devin
+session. That session uses the gate-owner playbook to coordinate child triage
+sessions and owns the gate until it is green, committing fixes on the pull
+request's own branch.
 
 Environment:
   SONAR_TOKEN        SonarCloud token with "Browse" on the project
@@ -13,13 +13,14 @@ Environment:
   SONAR_PROJECT_KEY  e.g. HoltzTomas_sonarcloud-repsol-demo
   DEVIN_API_KEY      Devin API key of the org that owns the repo
   DEVIN_API_BASE     defaults to https://api.devin.ai
-  DEVIN_PLAYBOOK_ID  saved Devin playbook each session runs with; when unset,
-                     the playbook markdown in this repo is inlined instead
-  GITHUB_REPOSITORY  owner/repo, provided by GitHub Actions
-  PR_NUMBER          pull request number (omit to scan the branch)
-  PR_BRANCH          head branch of that pull request, where fixes are committed
-  REMEDIATION_BRANCH fallback branch for branch scans, defaults to sonar/remediation
-  MAX_SESSIONS       safety cap on the fan-out, defaults to 10
+  DEVIN_PLAYBOOK_ID       saved gate-owner playbook; when unset, the gate-owner
+                          playbook markdown in this repo is inlined instead
+  DEVIN_TRIAGE_PLAYBOOK_ID saved triage playbook ID for child sessions; passed
+                           through in the gate-owner prompt
+  GITHUB_REPOSITORY       owner/repo, provided by GitHub Actions
+  PR_NUMBER               pull request number (omit to scan the branch)
+  PR_BRANCH               head branch of that pull request, where fixes are committed
+  REMEDIATION_BRANCH      fallback branch for branch scans, defaults to sonar/remediation
 """
 
 import json
@@ -35,14 +36,14 @@ PROJECT_KEY = os.environ["SONAR_PROJECT_KEY"]
 DEVIN_API_BASE = os.environ.get("DEVIN_API_BASE", "https://api.devin.ai").rstrip("/")
 DEVIN_API_KEY = os.environ["DEVIN_API_KEY"]
 DEVIN_PLAYBOOK_ID = os.environ.get("DEVIN_PLAYBOOK_ID", "").strip()
+DEVIN_TRIAGE_PLAYBOOK_ID = os.environ.get("DEVIN_TRIAGE_PLAYBOOK_ID", "").strip()
 REPO = os.environ["GITHUB_REPOSITORY"]
 PR_NUMBER = os.environ.get("PR_NUMBER", "").strip()
 PR_BRANCH = os.environ.get("PR_BRANCH", "").strip()
 REMEDIATION_BRANCH = os.environ.get("REMEDIATION_BRANCH", "sonar/remediation")
 TARGET_BRANCH = PR_BRANCH or REMEDIATION_BRANCH
-MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "10"))
 
-PLAYBOOK = pathlib.Path(__file__).resolve().parents[1] / "playbooks" / "sonar-triage-remediation.md"
+PLAYBOOK = pathlib.Path(__file__).resolve().parents[1] / "playbooks" / "sonar-gate-owner.md"
 
 
 def sonar_get(path, **params):
@@ -55,14 +56,14 @@ def sonar_get(path, **params):
         return json.load(resp)
 
 
-def findings():
+def collect_context():
     issues = sonar_get(
         "/api/issues/search",
         componentKeys=PROJECT_KEY,
         resolved="false",
         types="VULNERABILITY,BUG",
         ps=100,
-    )["issues"]
+    ).get("issues", [])
 
     out = []
     for issue in issues:
@@ -98,34 +99,82 @@ def findings():
                 "url": f"{SONAR_HOST}/security_hotspots?id={PROJECT_KEY}&hotspots={hs['key']}",
             }
         )
-    return out
+    quality_gate = sonar_get(
+        "/api/qualitygates/project_status",
+        projectKey=PROJECT_KEY,
+    ).get("projectStatus", {})
+    gate_errors = []
+    for condition in quality_gate.get("conditions", []):
+        if condition.get("status") == "ERROR":
+            gate_errors.append(
+                {
+                    "metric": condition.get("metricKey", "UNKNOWN"),
+                    "comparator": condition.get("comparator", "UNKNOWN"),
+                    "threshold": condition.get("errorThreshold", "UNKNOWN"),
+                    "actual": condition.get("actualValue", "UNKNOWN"),
+                }
+            )
+    return out, gate_errors
 
 
-def prompt_for(finding):
-    # With a saved playbook Devin already has the instructions, so the prompt
-    # only carries the finding. Without one, inline the playbook from the repo.
-    preamble = "" if DEVIN_PLAYBOOK_ID else PLAYBOOK.read_text() + "\n\n"
-    pr_url = f"https://github.com/{REPO}/pull/{PR_NUMBER}" if PR_NUMBER else "(branch scan)"
-    return (
-        f"{preamble}"
-        "## Finding to work\n"
-        f"- Repository: {REPO}\n"
-        f"- Pull request: {pr_url}\n"
-        f"- Branch to commit on (do NOT open a new pull request): {TARGET_BRANCH}\n"
-        f"- Sonar key: {finding['key']}\n"
-        f"- Type / severity: {finding['kind']} / {finding['severity']}\n"
-        f"- Rule: {finding['rule']}\n"
-        f"- Location: {finding['component']}:{finding['line']}\n"
-        f"- Message: {finding['message']}\n"
-        f"- Sonar link: {finding['url']}\n"
+def location(finding):
+    line = finding["line"] if finding["line"] is not None else "?"
+    return f"{finding['component']}:{line}"
+
+
+def findings_table(found):
+    if not found:
+        return "_No open findings._"
+    rows = [
+        "| Key | Type / severity | Rule | File:line | Message | Sonar link |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for finding in found:
+        rows.append(
+            f"| `{finding['key']}` | `{finding['kind']} / {finding['severity']}` "
+            f"| `{finding['rule']}` | `{location(finding)}` "
+            f"| {finding['message']} | {finding['url']} |"
+        )
+    return "\n".join(rows)
+
+
+def gate_errors_list(gate_errors):
+    if not gate_errors:
+        return "_No quality-gate conditions are in ERROR._"
+    return "\n".join(
+        f"- `{error['metric']}` `{error['comparator']}` "
+        f"threshold `{error['threshold']}`, actual `{error['actual']}`"
+        for error in gate_errors
     )
 
 
-def create_session(finding):
+def prompt_for(found, gate_errors):
+    preamble = "" if DEVIN_PLAYBOOK_ID else PLAYBOOK.read_text() + "\n\n"
+    pr_url = f"https://github.com/{REPO}/pull/{PR_NUMBER}" if PR_NUMBER else "(branch scan)"
+    pr_label = f"PR #{PR_NUMBER}" if PR_NUMBER else f"branch {TARGET_BRANCH}"
+    triage_id = DEVIN_TRIAGE_PLAYBOOK_ID or "(not configured)"
+    return (
+        f"{preamble}"
+        "# SonarCloud gate-owner assignment\n"
+        f"- Repository: {REPO}\n"
+        f"- Pull request: {pr_url}\n"
+        f"- Pull request number: {PR_NUMBER or '(none; branch scan)'}\n"
+        f"- Branch to commit on (do NOT open a new pull request): {TARGET_BRANCH}\n"
+        f"- Use Devin triage playbook ID `{triage_id}` for every child finding session.\n"
+        f"- You own {pr_label} until the SonarCloud quality gate is green.\n\n"
+        "## Open Sonar findings\n"
+        f"{findings_table(found)}\n\n"
+        "## Quality-gate conditions in ERROR\n"
+        f"{gate_errors_list(gate_errors)}\n"
+    )
+
+
+def create_session(found, gate_errors):
+    pr_label = f"PR #{PR_NUMBER}" if PR_NUMBER else f"branch {TARGET_BRANCH}"
     payload = {
-        "prompt": prompt_for(finding),
-        "title": f"Sonar {finding['rule']} — {finding['component']}:{finding['line']}",
-        "tags": ["sonar-remediation", finding["kind"].lower()],
+        "prompt": prompt_for(found, gate_errors),
+        "title": f"Sonar gate owner — {pr_label}",
+        "tags": ["sonar-remediation", "gate-owner"],
         "idempotent": True,
     }
     if DEVIN_PLAYBOOK_ID:
@@ -141,31 +190,40 @@ def create_session(finding):
         return json.load(resp)
 
 
+def write_summary(found, gate_errors, session_url):
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary:
+        return
+    lines = [
+        "## SonarCloud gate owner",
+        "",
+        "### Open findings",
+        findings_table(found),
+        "",
+        "### Quality-gate conditions in ERROR",
+        gate_errors_list(gate_errors),
+        "",
+        f"### Orchestrator session\n{session_url}",
+        "",
+    ]
+    with open(summary, "a") as fh:
+        fh.write("\n".join(lines))
+
+
 def main():
-    found = findings()
-    if not found:
-        print("No open Sonar findings; nothing to remediate.")
+    found, gate_errors = collect_context()
+    if not found and not gate_errors:
+        print("No open Sonar findings and the quality gate is not in ERROR; nothing to do.")
         return
 
-    print(f"{len(found)} finding(s) reported by SonarCloud")
-    lines = ["| Finding | Location | Devin session |", "| --- | --- | --- |"]
-    for finding in found[:MAX_SESSIONS]:
-        session = create_session(finding)
-        url = session.get("url", session.get("session_id", "created"))
-        print(f"  {finding['rule']} {finding['component']}:{finding['line']} -> {url}")
-        lines.append(
-            f"| `{finding['rule']}` {finding['message']} "
-            f"| `{finding['component']}:{finding['line']}` | {url} |"
-        )
-
-    summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary:
-        with open(summary, "a") as fh:
-            fh.write("\n".join(lines) + "\n")
-
-    skipped = len(found) - MAX_SESSIONS
-    if skipped > 0:
-        print(f"{skipped} finding(s) skipped by MAX_SESSIONS={MAX_SESSIONS}")
+    print(
+        f"{len(found)} open finding(s), "
+        f"{len(gate_errors)} quality-gate condition(s) in ERROR"
+    )
+    session = create_session(found, gate_errors)
+    session_url = session.get("url", session.get("session_id", "created"))
+    print(f"Gate-owner Devin session -> {session_url}")
+    write_summary(found, gate_errors, session_url)
 
 
 if __name__ == "__main__":

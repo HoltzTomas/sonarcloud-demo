@@ -54,27 +54,20 @@ rebota con un 400.
 
 1. CI corre el scan de SonarCloud sobre el PR y el quality gate falla
    (`.github/workflows/sonarcloud.yml`).
-2. Al fallar, se dispara `.github/workflows/devin-remediate.yml`, que lee los
-   issues y hotspots abiertos vía API de Sonar y crea **una sesión de Devin por
-   hallazgo** (`scripts/spawn_devin_sessions.py`), cada una con el playbook de
-   `playbooks/sonar-triage-remediation.md`.
-3. Cada sesión levanta la app, la abre en el navegador y clasifica: real vs
-   falso positivo.
-   - Real: explota el issue en la UI (captura), aplica el fix mínimo, repite el
-     mismo ataque para mostrarlo fallando, verifica que el flujo legítimo sigue
-     andando y commitea el fix **en la misma rama del PR**, comentando el PR con
-     las capturas. No abre PRs nuevos: el fix aparece en el PR que Sonar marcó.
-   - Falso positivo: intenta el ataque, captura el intento fallando, no toca el
-     código, comenta el PR con la justificación y cierra el finding en Sonar como
-     "False positive" vía el MCP de SonarQube, así el gate deja de estar rojo por
-     algo que no es un defecto.
-4. El push a la rama del PR re-dispara el scan sobre el mismo PR: el gate pasa
-   limpio, con el falso positivo intacto.
+2. Al fallar, `.github/workflows/devin-remediate.yml` crea **una sesión
+   orquestadora** con `playbooks/sonar-gate-owner.md`, que recibe los findings
+   y las condiciones de gate en error.
+3. La sesión orquestadora crea sub-sesiones por finding con el playbook de
+   triage, clasifica cada caso como real o falso positivo y se ocupa también de
+   las condiciones sin finding (como coverage), siempre en la misma rama del
+   PR y sin abrir PRs nuevos.
+4. Cada push re-dispara el scan; la orquestadora itera hasta que el quality gate
+   queda verde.
 
 Alternativa sin API: la automation template **SonarQube Quality Gate Fix**
 (Automations en la webapp) hace el paso 2 sin escribir workflow propio. El
 script existe porque en cuentas como Repsol el disparo sale del pipeline y hay
-que mostrar el fan-out por hallazgo.
+que mostrar la orquestación de findings y condiciones del gate.
 
 ## Setup
 
@@ -93,8 +86,8 @@ que mostrar el fan-out por hallazgo.
   el scanner les dice qué está mal, y ahí se termina."
 - **1-3 min** — La lista de findings en Sonar, mezclando reales y ruido. "Acá es
   donde hoy se van 5-6 personas revisando falsos positivos durante semanas."
-- **3-5 min** — El workflow de fan-out: una sesión de Devin por hallazgo,
-  corriendo en paralelo.
+- **3-5 min** — La sesión orquestadora y sus sub-sesiones de triage por
+  hallazgo, incluyendo una condición de coverage sin finding.
 - **5-8 min** — Abrir dos sesiones y mostrar sus grabaciones: una que **explota
   y arregla** la SQL injection del buscador (payload en la pantalla, todos los
   contratos filtrados, fix, mismo payload sin efecto), y otra que **descarta** la

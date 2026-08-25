@@ -16,8 +16,8 @@ on:
         default: ''
 
 jobs:
-  fan-out:
-    name: One Devin session per finding
+  gate-owner:
+    name: One Devin gate-owner session
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'
     runs-on: ubuntu-latest
     steps:
@@ -27,16 +27,16 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Spawn Devin sessions
+      - name: Spawn gate-owner Devin session
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
           SONAR_PROJECT_KEY: HoltzTomas_sonarcloud-repsol-demo
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
-          DEVIN_PLAYBOOK_ID: playbook-6a472415f95549de9af6f0e3545802ae
+          DEVIN_PLAYBOOK_ID: PLAYBOOK_ID_GATE_OWNER
+          DEVIN_TRIAGE_PLAYBOOK_ID: playbook-6a472415f95549de9af6f0e3545802ae
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.inputs.pr_number || (github.event.workflow_run.pull_requests[0].number || '') }}
           PR_BRANCH: ${{ github.event.inputs.pr_branch || (github.event.workflow_run.head_branch || '') }}
           REMEDIATION_BRANCH: sonar/remediation
-          MAX_SESSIONS: '10'
         run: python scripts/spawn_devin_sessions.py
