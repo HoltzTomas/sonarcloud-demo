@@ -21,6 +21,8 @@ const layout = `<!doctype html>
  th { color: #64748b; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; }
  a.contract { color: #1d4ed8; text-decoration: none; }
  .muted { color: #64748b; font-size: 13px; }
+ .comment { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+ .badge { width: 32px; height: 32px; border-radius: 16px; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; flex: none; }
  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
 </style>
 </head>
@@ -68,7 +70,28 @@ var detailTmpl = template.Must(template.New("detail").Parse(`
     <a class="contract" href="/contracts/attachment?name={{.Attachment}}">Descargar adjunto</a>
     ·
     <a class="contract" href="/contracts/export?id={{.Contract.ID}}">Exportar a PDF</a>
+    ·
+    <a class="contract" href="/contracts/comments?contract={{.Contract.ID}}">Comentarios de seguimiento</a>
   </p>
+</div>`))
+
+var commentsTmpl = template.Must(template.New("comments").Parse(`
+<div class="card">
+  <h2>Seguimiento de {{.ContractID}}</h2>
+  {{range .Comments}}
+  <div class="comment">
+    <div class="badge" style="background: {{.Color}}">{{.Initial}}</div>
+    <div><strong>{{.Author}}</strong><div>{{.Body}}</div></div>
+  </div>
+  {{else}}
+  <p class="muted">Todavia no hay comentarios.</p>
+  {{end}}
+  <form method="post" action="/contracts/comments">
+    <input type="hidden" name="contract" value="{{.ContractID}}">
+    <p><input type="text" name="author" placeholder="Tu nombre"></p>
+    <p><input type="text" name="body" placeholder="Comentario"></p>
+    <button type="submit">Comentar</button>
+  </form>
 </div>`))
 
 var summaryTmpl = template.Must(template.New("summary").Parse(`
