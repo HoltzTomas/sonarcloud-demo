@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 
+	// Blank import: registers the pure-Go "sqlite" driver with database/sql so
+	// that sql.Open("sqlite", ...) below can resolve it.
 	_ "modernc.org/sqlite"
 )
 
