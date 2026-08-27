@@ -1,8 +1,10 @@
 package renewals
 
 import (
-	"crypto/md5"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -21,9 +23,15 @@ type Proposal struct {
 var MarketRatesURL = "https://market-rates.example.com/api/v1/rates"
 
 // SignDownloadLink creates the link used by the renewal document download.
+// The signature authorises the download and protects it against tampering, so
+// it is computed with an HMAC (SHA-256) keyed by the signing secret rather than
+// a plain hash of secret||contractID, which would be forgeable via a
+// length-extension attack and rely on the broken MD5 primitive.
 func SignDownloadLink(secret, contractID string) string {
-	signature := md5.Sum([]byte(secret + contractID))
-	return fmt.Sprintf("/contracts/renewal/download?id=%s&signature=%x", contractID, signature)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(contractID))
+	signature := hex.EncodeToString(mac.Sum(nil))
+	return fmt.Sprintf("/contracts/renewal/download?id=%s&signature=%s", contractID, signature)
 }
 
 // FetchMarketRates retrieves the current benchmark rates for the proposal.

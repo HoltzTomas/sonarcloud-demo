@@ -1,6 +1,9 @@
 package renewals
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +14,26 @@ func TestSignDownloadLink(t *testing.T) {
 	link := SignDownloadLink("secret", "C-1001")
 	if !strings.Contains(link, "id=C-1001") || !strings.Contains(link, "signature=") {
 		t.Fatalf("unexpected download link %q", link)
+	}
+}
+
+func TestSignDownloadLinkUsesHMAC(t *testing.T) {
+	link := SignDownloadLink("secret", "C-1001")
+
+	mac := hmac.New(sha256.New, []byte("secret"))
+	mac.Write([]byte("C-1001"))
+	want := "signature=" + hex.EncodeToString(mac.Sum(nil))
+	if !strings.Contains(link, want) {
+		t.Fatalf("expected HMAC-SHA256 signature %q in %q", want, link)
+	}
+
+	// A different secret or contract id must produce a different signature,
+	// and the signature must not be a bare MD5 of secret+contractID.
+	if link == SignDownloadLink("other-secret", "C-1001") {
+		t.Fatal("signature must depend on the signing secret")
+	}
+	if link == SignDownloadLink("secret", "C-2002") {
+		t.Fatal("signature must depend on the contract id")
 	}
 }
 
