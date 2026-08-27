@@ -38,7 +38,7 @@ func SignDownloadLink(secret, contractID string) string {
 func FetchMarketRates() (map[string]float64, error) {
 	client := &http.Client{
 		Timeout:   2 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}},
 	}
 	resp, err := client.Get(MarketRatesURL)
 	if err != nil {

@@ -67,6 +67,25 @@ func TestFetchMarketRates(t *testing.T) {
 	}
 }
 
+func TestFetchMarketRatesRejectsUntrustedCertificate(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"energy":666.66}`))
+	}))
+	defer server.Close()
+
+	oldURL := MarketRatesURL
+	defer func() { MarketRatesURL = oldURL }()
+	MarketRatesURL = server.URL
+
+	rates, err := FetchMarketRates()
+	if err == nil {
+		t.Fatalf("expected certificate validation to fail, got rates %v", rates)
+	}
+	if !strings.Contains(err.Error(), "certificate") {
+		t.Fatalf("expected a certificate validation error, got %v", err)
+	}
+}
+
 func TestSigningSecret(t *testing.T) {
 	if got := SigningSecret(); got == "" {
 		t.Fatal("expected a signing secret")
