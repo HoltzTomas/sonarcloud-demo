@@ -38,7 +38,7 @@ resource "aws_db_instance" "contracts" {
   allocated_storage   = 20
   username            = "contracts_admin"
   password            = "ChangeMe123!"
-  storage_encrypted   = false
-  publicly_accessible = true
+  storage_encrypted   = true
+  publicly_accessible = false
   skip_final_snapshot = true
 }
