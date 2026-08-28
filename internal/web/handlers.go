@@ -18,6 +18,9 @@ import (
 // AttachmentRoot is the directory that holds contract attachments.
 const AttachmentRoot = "data/attachments"
 
+// headerContentType is the response header that carries the media type.
+const headerContentType = "Content-Type"
+
 var regionPattern = regexp.MustCompile(`^[A-Z]{2}-[0-9]{2}$`)
 
 // Server serves the contract desk UI.
@@ -42,7 +45,7 @@ func (s *Server) render(w http.ResponseWriter, tmpl *template.Template, data int
 		http.Error(w, "render error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set(headerContentType, "text/html; charset=utf-8")
 	if err := layoutTmpl.Execute(w, template.HTML(body.String())); err != nil {
 		http.Error(w, "render error", http.StatusInternalServerError)
 	}
@@ -107,7 +110,7 @@ func (s *Server) Attachment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "attachment not found", http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set(headerContentType, "text/plain; charset=utf-8")
 	w.Write(data)
 }
 
@@ -119,7 +122,7 @@ func (s *Server) Export(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "export failed: "+string(out), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set(headerContentType, "text/plain; charset=utf-8")
 	w.Write(out)
 }
 
