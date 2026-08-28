@@ -3,10 +3,12 @@ package web
 import (
 	"bytes"
 	"database/sql"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -99,10 +101,31 @@ func (s *Server) Detail(w http.ResponseWriter, r *http.Request) {
 	s.render(w, detailTmpl, detailView{Contract: c, Attachment: c.ID + ".txt"})
 }
 
+// resolveAttachment maps an attachment name to a path contained in AttachmentRoot.
+func resolveAttachment(name string) (string, error) {
+	if name == "" || name != filepath.Base(name) {
+		return "", errors.New("attachment name must be a plain file name")
+	}
+	root, err := filepath.Abs(AttachmentRoot)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(root, filepath.Clean("/"+name))
+	if path != root && !strings.HasPrefix(path, root+string(os.PathSeparator)) {
+		return "", errors.New("attachment outside of the attachment root")
+	}
+	return path, nil
+}
+
 // Attachment streams a contract attachment from disk.
 func (s *Server) Attachment(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
-	data, err := ioutil.ReadFile(filepath.Join(AttachmentRoot, name))
+	path, err := resolveAttachment(name)
+	if err != nil {
+		http.Error(w, "invalid attachment name", http.StatusBadRequest)
+		return
+	}
+	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		http.Error(w, "attachment not found", http.StatusNotFound)
 		return
