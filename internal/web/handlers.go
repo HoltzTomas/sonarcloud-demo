@@ -32,6 +32,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("/contracts/", s.Detail)
 	mux.HandleFunc("/contracts/attachment", s.Attachment)
 	mux.HandleFunc("/contracts/export", s.Export)
+	mux.HandleFunc("/contracts/comments", s.Comments)
 	mux.HandleFunc("/summary", s.Summary)
 	return mux
 }
