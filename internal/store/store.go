@@ -23,6 +23,12 @@ CREATE TABLE contracts (
 	owner    TEXT NOT NULL,
 	notes    TEXT NOT NULL
 );
+CREATE TABLE comments (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	contract_id TEXT NOT NULL,
+	author      TEXT NOT NULL,
+	body        TEXT NOT NULL
+);
 CREATE TABLE api_keys (
 	name  TEXT PRIMARY KEY,
 	token TEXT NOT NULL
@@ -39,6 +45,16 @@ CREATE TABLE api_keys (
 	}
 	for _, c := range contracts {
 		if _, err := db.Exec("INSERT INTO contracts (id, customer, region, amount, owner, notes) VALUES (?, ?, ?, ?, ?, ?)", c...); err != nil {
+			return nil, err
+		}
+	}
+
+	comments := [][]interface{}{
+		{"C-1001", "Ana Gomez", "Revisada la clausula de revision de precios."},
+		{"C-1001", "Luis Martin", "Pendiente firma del anexo tecnico."},
+	}
+	for _, c := range comments {
+		if _, err := db.Exec("INSERT INTO comments (contract_id, author, body) VALUES (?, ?, ?)", c...); err != nil {
 			return nil, err
 		}
 	}
