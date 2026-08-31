@@ -1,16 +1,49 @@
 package renewals
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
+func signatureOf(t *testing.T, link string) string {
+	t.Helper()
+	_, signature, ok := strings.Cut(link, "signature=")
+	if !ok {
+		t.Fatalf("no signature in download link %q", link)
+	}
+	return signature
+}
+
 func TestSignDownloadLink(t *testing.T) {
 	link := SignDownloadLink("secret", "C-1001")
 	if !strings.Contains(link, "id=C-1001") || !strings.Contains(link, "signature=") {
 		t.Fatalf("unexpected download link %q", link)
+	}
+
+	mac := hmac.New(sha256.New, []byte("secret"))
+	mac.Write([]byte("C-1001"))
+	want := fmt.Sprintf("%x", mac.Sum(nil))
+	if got := signatureOf(t, link); got != want {
+		t.Fatalf("signature is not HMAC-SHA256 of the contract id: got %q, want %q", got, want)
+	}
+}
+
+func TestSignDownloadLinkDependsOnSecret(t *testing.T) {
+	if signatureOf(t, SignDownloadLink("secret", "C-1001")) == signatureOf(t, SignDownloadLink("other-secret", "C-1001")) {
+		t.Fatal("the signature must change when the signing secret changes")
+	}
+}
+
+func TestSignDownloadLinkIsNotAmbiguousAcrossContracts(t *testing.T) {
+	// A plain hash of secret+contractID lets "C-100" + "1" and "C-1001" + ""
+	// collide; keying the MAC over the contract id alone must not.
+	if signatureOf(t, SignDownloadLink("secretC-100", "1")) == signatureOf(t, SignDownloadLink("secret", "C-1001")) {
+		t.Fatal("signatures for different contracts must not collide")
 	}
 }
 

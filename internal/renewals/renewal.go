@@ -1,7 +1,8 @@
 package renewals
 
 import (
-	"crypto/md5"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -22,7 +23,9 @@ var MarketRatesURL = "https://market-rates.example.com/api/v1/rates"
 
 // SignDownloadLink creates the link used by the renewal document download.
 func SignDownloadLink(secret, contractID string) string {
-	signature := md5.Sum([]byte(secret + contractID))
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(contractID))
+	signature := mac.Sum(nil)
 	return fmt.Sprintf("/contracts/renewal/download?id=%s&signature=%x", contractID, signature)
 }
 
