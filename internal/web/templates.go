@@ -68,7 +68,24 @@ var detailTmpl = template.Must(template.New("detail").Parse(`
     <a class="contract" href="/contracts/attachment?name={{.Attachment}}">Descargar adjunto</a>
     ·
     <a class="contract" href="/contracts/export?id={{.Contract.ID}}">Exportar a PDF</a>
+    ·
+    <a class="contract" href="/contracts/renewal?id={{.Contract.ID}}">Propuesta de renovacion</a>
   </p>
+</div>`))
+
+var renewalTmpl = template.Must(template.New("renewal").Parse(`
+<div class="card">
+  <h2>Propuesta de renovacion</h2>
+  <p class="muted">Contrato {{.Contract.ID}} · Cliente {{.Contract.Customer}}</p>
+  <p>Importe propuesto: {{.Contract.Amount}}</p>
+  {{if .Proposal.RatesError}}
+  <p class="muted">{{.Proposal.RatesError}}</p>
+  {{else}}
+  <h3>Tasas de mercado</h3>
+  <ul>{{range $name, $value := .Proposal.Rates}}<li>{{$name}}: {{$value}}</li>{{end}}</ul>
+  {{end}}
+  <p><a class="contract" href="{{.Proposal.DownloadURL}}">Descargar propuesta firmada</a></p>
+  <p class="muted">ETag: {{.ETag}}</p>
 </div>`))
 
 var summaryTmpl = template.Must(template.New("summary").Parse(`
